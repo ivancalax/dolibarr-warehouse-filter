@@ -25,7 +25,7 @@ class ActionsWarehouseFilter {
         return '';
     }
 
-    // 1. Títulos de las 4 columnas (Ahora son dinámicos)
+// 1. Títulos de las 4 columnas (Cabecera Fija con selectores exactos del DOM)
     public function printFieldListTitle($parameters, &$object, &$action, $hookmanager) {
         if ($this->_checkContext($parameters['context'])) {
             $wh1 = GETPOST('search_warehouse_id_1', 'int');
@@ -38,7 +38,29 @@ class ActionsWarehouseFilter {
             $title3 = ($wh3 > 0) ? $this->_getWarehouseName($wh3) : 'Almacén 3';
             $title4 = ($wh4 > 0) ? $this->_getWarehouseName($wh4) : 'Almacén 4';
 
-            $this->resprints = '<th class="liste_titre">'.$title1.'</th>';
+            // CSS Corregido basándonos exactamente en tu inspector de elementos
+            $css = '<style>
+                /* Fija la fila de filtros (donde están los selectores de búsqueda) */
+                tr.liste_titre_filter th,
+                tr.liste_titre_filter td {
+                    position: sticky !important;
+                    top: 53px !important; /* Inicia justo debajo del menú azul */
+                    background-color: #ffffff !important; /* Fondo blanco sólido */
+                    z-index: 50 !important;
+                }
+                
+                /* Fija la fila de títulos de columnas (Ref, Etiqueta, Almacén...) */
+                tr.liste_titre th,
+                tr.liste_titre td {
+                    position: sticky !important;
+                    top: 86px !important; /* 53px del menú + 33px de la fila de filtros */
+                    background-color: #ffffff !important; /* Fondo blanco sólido */
+                    z-index: 50 !important;
+                    box-shadow: 0 4px 5px -2px rgba(0,0,0,0.15) !important; /* Sombra para separarlo del contenido */
+                }
+            </style>';
+
+            $this->resprints = $css . '<th class="liste_titre">'.$title1.'</th>';
             $this->resprints .= '<th class="liste_titre">'.$title2.'</th>';
             $this->resprints .= '<th class="liste_titre">'.$title3.'</th>';
             $this->resprints .= '<th class="liste_titre">'.$title4.'</th>';
@@ -47,7 +69,7 @@ class ActionsWarehouseFilter {
         }
         return 0;
     }
-
+    
     // 2. Selectores HTML puros para los 4 almacenes
     public function printFieldListOption($parameters, &$object, &$action, $hookmanager) {
         if ($this->_checkContext($parameters['context'])) {
