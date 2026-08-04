@@ -1,103 +1,133 @@
 <?php
-
-class ActionsWarehouseFilter 
-{
+class ActionsWarehouseFilter {
     public $db;
-    public $resprints; // Variable obligatoria de Dolibarr para imprimir HTML
-    public $resql;     // Variable obligatoria de Dolibarr para inyectar SQL
+    public $resprints; 
+    public $resql;     
 
-    // 1. CONSTRUCTOR OBLIGATORIO PARA USAR BASE DE DATOS
-    public function __construct($db) 
-    {
+    public function __construct($db) {
         $this->db = $db;
     }
 
-    // Validador de contexto
-    private function _checkContext($context) 
-    {
+    private function _checkContext($context) {
         if (empty($context)) return false;
-        
         $contexts = explode(':', $context);
         return (in_array('productlist', $contexts) || in_array('productservicelist', $contexts));
     }
 
-    // Añadir Título de la columna (Si no lo ponemos, la tabla se descuadra)
-    public function printFieldListTitle($parameters, &$object, &$action, $hookmanager) 
-    {
+    // 1. Títulos de las columnas
+    public function printFieldListTitle($parameters, &$object, &$action, $hookmanager) {
         if ($this->_checkContext($parameters['context'])) {
-            $this->resprints = '<th class="liste_titre">Almacén</th>';
-            return 1; // Modificado a 1 para Dolibarr v23
+            $this->resprints = '<th class="liste_titre">Almacén Principal</th>';
+            $this->resprints .= '<th class="liste_titre">Almacén Secundario</th>';
+            return 0;
         }
-        
         return 0;
     }
 
-    // Inserta el selector en la fila de filtros
-    public function printFieldListOption($parameters, &$object, &$action, $hookmanager) 
-    {
-        if ($this->_checkContext($parameters['context'])) {
-            // CORREGIDO: En Dolibarr v23 se usa FormProduct y selectWarehouses
-            require_once DOL_DOCUMENT_ROOT.'/product/class/html.formproduct.class.php';
-            $formproduct = new FormProduct($this->db);
-            $selected = GETPOST('search_warehouse_id', 'int');
-            
-            $html  = '<td class="liste_titre right">';
-            $html .= $formproduct->selectWarehouses($selected, 'search_warehouse_id', '', 1, 0, 0, '', 0, 0, 'maxwidth150');
-            $html .= '</td>';
-            
-            $this->resprints = $html; // Se inyecta así
-            return 1; // Modificado a 1 para Dolibarr v23
-        }
-        
-        return 0;
-    }
-
-    // Muestra el stock del producto por almacén en la lista
-    public function printFieldListValue($parameters, &$object, &$action, $hookmanager) 
-    {
+    // 2. Selectores HTML puros (A prueba de fallos)
+    public function printFieldListOption($parameters, &$object, &$action, $hookmanager) {
         if ($this->_checkContext($parameters['context'])) {
             global $conf;
-            $warehouse_id = GETPOST('search_warehouse_id', 'int');
-            
-            // Si hay un almacén seleccionado, buscamos el stock
-            if ($warehouse_id > 0) {
-                $sql  = "SELECT reel FROM " . MAIN_DB_PREFIX . "product_stock";
-                $sql .= " WHERE fk_product = " . (int)$object->id;
-                $sql .= " AND fk_entrepot = " . (int)$warehouse_id;
-                
-                $resql_stock = $this->db->query($sql);
-                
-                if ($resql_stock) {
-                    $obj_stock = $this->db->fetch_object($resql_stock);
-                    $stock = ($obj_stock ? $obj_stock->reel : 0);
-                    $this->db->free($resql_stock);
-                    
-                    $this->resprints = '<td class="right">' . $stock . '</td>';
-                } else {
-                    // Error en consulta
-                    $this->resprints = '<td></td>'; 
-                }
-            } else {
-                // Si no hay almacén seleccionado, mostramos celda vacía
-                $this->resprints = '<td></td>';
+
+            $wh1 = GETPOST('search_warehouse_id_1', 'int');
+            $wh2 = GETPOST('search_warehouse_id_2', 'int');
+
+            // Si limpian los filtros con el botón de la papelera
+            if (GETPOST('button_removefilter_x', 'alpha') || GETPOST('button_removefilter', 'alpha')) {
+                $wh1 = -1;
+                $wh2 = -1;
             }
+
+            // Consultamos los almacenes directo a la base de datos
+            $sql = "SELECT rowid, ref FROM ".MAIN_DB_PREFIX."entrepot WHERE entity IN (0, " . $conf->entity . ")";
+            $resql = $this->db->query($sql);
+
+            $options1 = '<option value="-1">-- Seleccionar --</option>';
+            $options2 = '<option value="-1">-- Seleccionar --</option>';
+
+            if ($resql) {
+                while ($obj = $this->db->fetch_object($resql)) {
+                    $sel1 = ($wh1 == $obj->rowid) ? ' selected="selected"' : '';
+                    $sel2 = ($wh2 == $obj->rowid) ? ' selected="selected"' : '';
+                    $options1 .= '<option value="'.$obj->rowid.'"'.$sel1.'>'.$obj->ref.'</option>';
+                    $options2 .= '<option value="'.$obj->rowid.'"'.$sel2.'>'.$obj->ref.'</option>';
+                }
+            }
+
+            // Inyectamos el HTML de los selectores directamente
+            $html = '<td class="liste_titre">';
+            $html .= '<select name="search_warehouse_id_1" class="flat maxwidth100" onchange="this.form.submit();">'.$options1.'</select>';
+            $html .= '</td>';
             
-            return 1; // Modificado a 1 para Dolibarr v23
+            $html .= '<td class="liste_titre">';
+            $html .= '<select name="search_warehouse_id_2" class="flat maxwidth100" onchange="this.form.submit();">'.$options2.'</select>';
+            $html .= '</td>';
+
+            $this->resprints = $html;
+            return 0;
         }
-        
         return 0;
     }
 
-    // Modifica la consulta SQL para filtrar la lista
-    public function printFieldListWhere($parameters, &$object, &$action, $hookmanager) 
-    {
-        $warehouse_id = GETPOST('search_warehouse_id', 'int');
-        
-        if ($this->_checkContext($parameters['context']) && $warehouse_id > 0) {
-            $this->resql = " AND p.rowid IN (SELECT fk_product FROM " . MAIN_DB_PREFIX . "product_stock WHERE fk_entrepot = " . $warehouse_id . " AND reel > 0)";
-            return 1; // 1 significa que inyecta el resql
+    // 3. Mostramos el stock exacto en cada celda
+    public function printFieldListValue($parameters, &$object, &$action, $hookmanager) {
+        if ($this->_checkContext($parameters['context'])) {
+            $wh1 = GETPOST('search_warehouse_id_1', 'int');
+            $wh2 = GETPOST('search_warehouse_id_2', 'int');
+            
+            $product_id = isset($parameters['obj']->rowid) ? $parameters['obj']->rowid : (isset($parameters['obj']->id) ? $parameters['obj']->id : 0);
+            $html = '';
+            
+            // Valor Columna 1
+            if ($wh1 > 0) {
+                $stock1 = $this->_getStock($product_id, $wh1);
+                $color1 = ($stock1 > 0) ? 'color:green;' : 'color:#999;';
+                $html .= '<td><strong style="'.$color1.'">'.$stock1.'</strong></td>';
+            } else {
+                $html .= '<td>-</td>';
+            }
+
+            // Valor Columna 2
+            if ($wh2 > 0) {
+                $stock2 = $this->_getStock($product_id, $wh2);
+                $color2 = ($stock2 > 0) ? 'color:green;' : 'color:#999;';
+                $html .= '<td><strong style="'.$color2.'">'.$stock2.'</strong></td>';
+            } else {
+                $html .= '<td>-</td>';
+            }
+            
+            $this->resprints = $html;
+            return 0;
         }
-        
+        return 0;
+    }
+
+    // 4. Filtramos la consulta base
+    public function printFieldListWhere($parameters, &$object, &$action, $hookmanager) {
+        if ($this->_checkContext($parameters['context'])) {
+            $wh1 = GETPOST('search_warehouse_id_1', 'int');
+            $wh2 = GETPOST('search_warehouse_id_2', 'int');
+            
+            $conditions = array();
+            if ($wh1 > 0) $conditions[] = "fk_entrepot = ".$wh1." AND reel > 0";
+            if ($wh2 > 0) $conditions[] = "fk_entrepot = ".$wh2." AND reel > 0";
+            
+            if (!empty($conditions)) {
+                $sql_cond = implode(" OR ", $conditions);
+                $this->resql = " AND p.rowid IN (SELECT fk_product FROM ".MAIN_DB_PREFIX."product_stock WHERE ".$sql_cond.")";
+            }
+        }
+        return 0; 
+    }
+
+    // Función auxiliar para obtener el stock
+    private function _getStock($product_id, $warehouse_id) {
+        if ($product_id <= 0 || $warehouse_id <= 0) return 0;
+        $sql = "SELECT reel FROM ".MAIN_DB_PREFIX."product_stock WHERE fk_product = ".(int)$product_id." AND fk_entrepot = ".(int)$warehouse_id;
+        $resql = $this->db->query($sql);
+        if ($resql && $row = $this->db->fetch_object($resql)) {
+            return $row->reel;
+        }
         return 0;
     }
 }
