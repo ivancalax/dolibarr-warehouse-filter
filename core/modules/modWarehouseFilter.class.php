@@ -12,7 +12,7 @@ class modWarehouseFilter extends DolibarrModules {
         $this->name = "WarehouseFilter";
         $this->description = "Filtra el stock por almacén en el listado de productos";
         $this->family = "other";
-        $this->version = '1.0.0';
+        $this->version = '1.04';
         $this->const_name = 'MAIN_MODULE_WAREHOUSEFILTER';
         $this->enabled = 1;
         

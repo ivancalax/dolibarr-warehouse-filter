@@ -14,53 +14,88 @@ class ActionsWarehouseFilter {
         return (in_array('productlist', $contexts) || in_array('productservicelist', $contexts));
     }
 
-    // NUEVA FUNCIÓN: Obtiene el nombre (ref) del almacén según su ID
+    // Obtiene el nombre corto (lieu) del almacén según su ID
     private function _getWarehouseName($warehouse_id) {
         if ($warehouse_id <= 0) return '';
-        $sql = "SELECT ref FROM ".MAIN_DB_PREFIX."entrepot WHERE rowid = ".(int)$warehouse_id;
+        $sql = "SELECT ref, lieu FROM ".MAIN_DB_PREFIX."entrepot WHERE rowid = ".(int)$warehouse_id;
         $resql = $this->db->query($sql);
         if ($resql && $row = $this->db->fetch_object($resql)) {
-            return $row->ref;
+            // Retorna el nombre corto, si está vacío usa la referencia como respaldo
+            return !empty($row->lieu) ? $row->lieu : $row->ref;
         }
         return '';
     }
 
-// 1. Títulos de las 4 columnas (Cabecera Fija con selectores exactos del DOM)
+    // FUNCIÓN AUXILIAR: Gestiona los valores por defecto (A-Z) y memoria de sesión
+    private function _getWhs($context) {
+        global $conf;
+        
+        // Llaves de sesión únicas para recordar filtros al paginar
+        $ctx = str_replace(':', '_', $context);
+        $sk1 = 'wh1_'.$ctx;
+        $sk2 = 'wh2_'.$ctx;
+        $sk3 = 'wh3_'.$ctx;
+        $sk4 = 'wh4_'.$ctx;
+        
+        $wh1 = GETPOST('search_warehouse_id_1');
+        $wh2 = GETPOST('search_warehouse_id_2');
+        $wh3 = GETPOST('search_warehouse_id_3');
+        $wh4 = GETPOST('search_warehouse_id_4');
+        
+        // Detectar si el usuario presionó la papelera para limpiar filtros
+        $is_clear = (GETPOST('button_removefilter_x', 'alpha') || GETPOST('button_removefilter', 'alpha'));
+        
+        if ($is_clear) {
+            $wh1 = $wh2 = $wh3 = $wh4 = '';
+            unset($_SESSION[$sk1], $_SESSION[$sk2], $_SESSION[$sk3], $_SESSION[$sk4]);
+        } else {
+            // Recuperar de la sesión si no se envió por POST (ej. al cambiar de página)
+            if ($wh1 === '' && isset($_SESSION[$sk1])) $wh1 = $_SESSION[$sk1];
+            if ($wh2 === '' && isset($_SESSION[$sk2])) $wh2 = $_SESSION[$sk2];
+            if ($wh3 === '' && isset($_SESSION[$sk3])) $wh3 = $_SESSION[$sk3];
+            if ($wh4 === '' && isset($_SESSION[$sk4])) $wh4 = $_SESSION[$sk4];
+        }
+        
+        // Si todo está vacío, es la CARGA INICIAL: Seleccionamos los 4 primeros por REFERENCIA (ref)
+        if ($wh1 === '' && $wh2 === '' && $wh3 === '' && $wh4 === '') {
+            $defaults = array(-1, -1, -1, -1);
+            // ORDEN ALFABÉTICO POR REFERENCIA
+            $sql = "SELECT rowid FROM ".MAIN_DB_PREFIX."entrepot WHERE entity IN (0, " . (int)$conf->entity . ") ORDER BY ref ASC LIMIT 4";
+            $resql = $this->db->query($sql);
+            if ($resql) {
+                $i = 0;
+                while ($obj = $this->db->fetch_object($resql)) {
+                    $defaults[$i] = $obj->rowid;
+                    $i++;
+                }
+            }
+            $_SESSION[$sk1] = $defaults[0];
+            $_SESSION[$sk2] = $defaults[1];
+            $_SESSION[$sk3] = $defaults[2];
+            $_SESSION[$sk4] = $defaults[3];
+            return $defaults;
+        }
+        
+        // Guardar selección actual en sesión para que no se borre al paginar
+        if ($wh1 !== '') $_SESSION[$sk1] = $wh1;
+        if ($wh2 !== '') $_SESSION[$sk2] = $wh2;
+        if ($wh3 !== '') $_SESSION[$sk3] = $wh3;
+        if ($wh4 !== '') $_SESSION[$sk4] = $wh4;
+        
+        return array((int)$wh1, (int)$wh2, (int)$wh3, (int)$wh4);
+    }
+
+    // 1. Títulos de las 4 columnas
     public function printFieldListTitle($parameters, &$object, &$action, $hookmanager) {
         if ($this->_checkContext($parameters['context'])) {
-            $wh1 = GETPOST('search_warehouse_id_1', 'int');
-            $wh2 = GETPOST('search_warehouse_id_2', 'int');
-            $wh3 = GETPOST('search_warehouse_id_3', 'int');
-            $wh4 = GETPOST('search_warehouse_id_4', 'int');
+            list($wh1, $wh2, $wh3, $wh4) = $this->_getWhs($parameters['context']);
 
             $title1 = ($wh1 > 0) ? $this->_getWarehouseName($wh1) : 'Almacén 1';
             $title2 = ($wh2 > 0) ? $this->_getWarehouseName($wh2) : 'Almacén 2';
             $title3 = ($wh3 > 0) ? $this->_getWarehouseName($wh3) : 'Almacén 3';
             $title4 = ($wh4 > 0) ? $this->_getWarehouseName($wh4) : 'Almacén 4';
 
-            // CSS Corregido basándonos exactamente en tu inspector de elementos
-            $css = '<style>
-                /* Fija la fila de filtros (donde están los selectores de búsqueda) */
-                tr.liste_titre_filter th,
-                tr.liste_titre_filter td {
-                    position: sticky !important;
-                    top: 53px !important; /* Inicia justo debajo del menú azul */
-                    background-color: #ffffff !important; /* Fondo blanco sólido */
-                    z-index: 50 !important;
-                }
-                
-                /* Fija la fila de títulos de columnas (Ref, Etiqueta, Almacén...) */
-                tr.liste_titre th,
-                tr.liste_titre td {
-                    position: sticky !important;
-                    top: 86px !important; /* 53px del menú + 33px de la fila de filtros */
-                    background-color: #ffffff !important; /* Fondo blanco sólido */
-                    z-index: 50 !important;
-                    box-shadow: 0 4px 5px -2px rgba(0,0,0,0.15) !important; /* Sombra para separarlo del contenido */
-                }
-            </style>';
-
-            $this->resprints = $css . '<th class="liste_titre">'.$title1.'</th>';
+            $this->resprints = '<th class="liste_titre">'.$title1.'</th>';
             $this->resprints .= '<th class="liste_titre">'.$title2.'</th>';
             $this->resprints .= '<th class="liste_titre">'.$title3.'</th>';
             $this->resprints .= '<th class="liste_titre">'.$title4.'</th>';
@@ -69,27 +104,16 @@ class ActionsWarehouseFilter {
         }
         return 0;
     }
-    
+
     // 2. Selectores HTML puros para los 4 almacenes
     public function printFieldListOption($parameters, &$object, &$action, $hookmanager) {
         if ($this->_checkContext($parameters['context'])) {
             global $conf;
 
-            $wh1 = GETPOST('search_warehouse_id_1', 'int');
-            $wh2 = GETPOST('search_warehouse_id_2', 'int');
-            $wh3 = GETPOST('search_warehouse_id_3', 'int');
-            $wh4 = GETPOST('search_warehouse_id_4', 'int');
+            list($wh1, $wh2, $wh3, $wh4) = $this->_getWhs($parameters['context']);
 
-            // Si limpian los filtros con el botón de la papelera
-            if (GETPOST('button_removefilter_x', 'alpha') || GETPOST('button_removefilter', 'alpha')) {
-                $wh1 = -1;
-                $wh2 = -1;
-                $wh3 = -1;
-                $wh4 = -1;
-            }
-
-            // Consultamos los almacenes directo a la base de datos
-            $sql = "SELECT rowid, ref FROM ".MAIN_DB_PREFIX."entrepot WHERE entity IN (0, " . $conf->entity . ")";
+            // Consultamos almacenes y ORDENAMOS POR REFERENCIA (ref ASC)
+            $sql = "SELECT rowid, ref, lieu FROM ".MAIN_DB_PREFIX."entrepot WHERE entity IN (0, " . (int)$conf->entity . ") ORDER BY ref ASC";
             $resql = $this->db->query($sql);
 
             $options1 = '<option value="-1">-- Todos --</option>';
@@ -104,10 +128,13 @@ class ActionsWarehouseFilter {
                     $sel3 = ($wh3 == $obj->rowid) ? ' selected="selected"' : '';
                     $sel4 = ($wh4 == $obj->rowid) ? ' selected="selected"' : '';
                     
-                    $options1 .= '<option value="'.$obj->rowid.'"'.$sel1.'>'.$obj->ref.'</option>';
-                    $options2 .= '<option value="'.$obj->rowid.'"'.$sel2.'>'.$obj->ref.'</option>';
-                    $options3 .= '<option value="'.$obj->rowid.'"'.$sel3.'>'.$obj->ref.'</option>';
-                    $options4 .= '<option value="'.$obj->rowid.'"'.$sel4.'>'.$obj->ref.'</option>';
+                    // Mostramos SIEMPRE el nombre corto (lieu) en la etiqueta visual
+                    $display_name = !empty($obj->lieu) ? $obj->lieu : $obj->ref;
+
+                    $options1 .= '<option value="'.$obj->rowid.'"'.$sel1.'>'.$display_name.'</option>';
+                    $options2 .= '<option value="'.$obj->rowid.'"'.$sel2.'>'.$display_name.'</option>';
+                    $options3 .= '<option value="'.$obj->rowid.'"'.$sel3.'>'.$display_name.'</option>';
+                    $options4 .= '<option value="'.$obj->rowid.'"'.$sel4.'>'.$display_name.'</option>';
                 }
             }
 
@@ -133,17 +160,11 @@ class ActionsWarehouseFilter {
     // 3. Mostramos el stock exacto en cada celda
     public function printFieldListValue($parameters, &$object, &$action, $hookmanager) {
         if ($this->_checkContext($parameters['context'])) {
-            $whs = array(
-                GETPOST('search_warehouse_id_1', 'int'),
-                GETPOST('search_warehouse_id_2', 'int'),
-                GETPOST('search_warehouse_id_3', 'int'),
-                GETPOST('search_warehouse_id_4', 'int')
-            );
+            $whs = $this->_getWhs($parameters['context']);
             
             $product_id = isset($parameters['obj']->rowid) ? $parameters['obj']->rowid : (isset($parameters['obj']->id) ? $parameters['obj']->id : 0);
             $html = '';
             
-            // Generar las 4 columnas de valores
             foreach ($whs as $wh) {
                 if ($wh > 0) {
                     $stock = $this->_getStock($product_id, $wh);
@@ -163,12 +184,7 @@ class ActionsWarehouseFilter {
     // 4. Filtramos la consulta base 
     public function printFieldListWhere($parameters, &$object, &$action, $hookmanager) {
         if ($this->_checkContext($parameters['context'])) {
-            $whs = array(
-                GETPOST('search_warehouse_id_1', 'int'),
-                GETPOST('search_warehouse_id_2', 'int'),
-                GETPOST('search_warehouse_id_3', 'int'),
-                GETPOST('search_warehouse_id_4', 'int')
-            );
+            $whs = $this->_getWhs($parameters['context']);
             
             $conditions = array();
             foreach ($whs as $wh) {
